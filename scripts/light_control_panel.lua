@@ -4,7 +4,7 @@
 -- It scans the current scene graph for nodes with a "power" pin and creates
 -- a small floating window with per-light sliders plus global off/reset controls.
 
-local SCRIPT_VERSION = "v0.1.13"
+local SCRIPT_VERSION = "v0.1.14"
 local MAX_LIGHTS_IN_WINDOW = 120
 local POWER_SLIDER_MAX = 100000.0
 local SLIDER_STEP = 0.01
@@ -1130,6 +1130,10 @@ local function row_label_text(light)
     return prefix .. short_name(light.name, 32) .. "  [" .. tostring(light.node_id) .. "]"
 end
 
+local function create_row_separator()
+    return create_label(string.rep("-", 146), 1320)
+end
+
 local function collect_lights()
     local graph, graph_api = get_root_graph()
     if not graph then
@@ -1931,11 +1935,14 @@ local function build_window(lights)
                 light.value_label,
                 action_group,
             },
-            padding  = { 3 },
-            border   = true,
+            padding  = { 2 },
+            border   = false,
         }
 
         children[#children + 1] = row
+        if i < shown_count then
+            children[#children + 1] = create_row_separator()
+        end
     end
 
     if #lights > shown_count then
