@@ -2,6 +2,7 @@
 *.bak
 *.ocs
 *.orbx
+*.zip
 *.log
 *.tmp
 *.exposed-emissions.bak
