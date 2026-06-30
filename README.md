@@ -36,6 +36,16 @@ Highlights:
 - Supports marking a target node for deletion, then writing/reloading with `Apply+Render`.
 - Writes a `.lightpanel.bak` backup before modifying a scene.
 
+## Screenshots
+
+Exposed light controls collected at the parent graph:
+
+![Exposed light controls in the Octane node graph](docs/images/exposed-light-controls-node-graph.png)
+
+Light control panel:
+
+![Octane Standalone light control panel](docs/images/light-control-panel.png)
+
 ## Usage
 
 Open a script in Octane Standalone's Lua script editor while a project is open and run it.
