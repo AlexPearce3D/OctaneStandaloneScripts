@@ -4,9 +4,12 @@
 -- It scans the current scene graph for nodes with a "power" pin and creates
 -- a small floating window with per-light sliders plus global off/reset controls.
 
-local SCRIPT_VERSION = "v0.1.14"
-local MAX_LIGHTS_IN_WINDOW = 120
+local SCRIPT_VERSION = "v0.1.23"
+local MAX_LIGHTS_IN_WINDOW = 500
+local ROW_PANEL_HEIGHT = 520
+local COMPACT_CONTROL_HEIGHT = 18
 local POWER_SLIDER_MAX = 100000.0
+local LIGHT_PASS_ID_MAX = 100
 local SLIDER_STEP = 0.01
 local FILE_BACKUP_EXT = ".lightpanel.bak"
 
@@ -14,7 +17,6 @@ local SCENE_LINES = nil
 local SCENE_PATH = nil
 local SCENE_BACKED_UP = false
 local SCENE_NODE_SPANS = nil
-local SELECTED_PANEL_LIGHT = nil
 
 local function call_method(obj, name, ...)
     if not obj then
@@ -562,6 +564,7 @@ local function collect_file_lights()
     local rows = {}
     local tracked_pins = {
         power = true,
+        lightPassId = true,
         sunIntensity = true,
         turbidity = true,
     }
@@ -614,10 +617,6 @@ local function collect_file_lights()
                 or tostring(node and node.name or ""):lower():find("environment", 1, true) ~= nil)
     end
 
-    local function starts_with_wp(name)
-        return tostring(name or ""):lower():match("^wp") ~= nil
-    end
-
     local function nearest_light_node()
         for i = #node_stack, 1, -1 do
             local n = node_stack[i]
@@ -653,22 +652,46 @@ local function collect_file_lights()
         return false
     end
 
+    local function resolve_connected_field(field)
+        if not field or field.value ~= nil or not field.connect then
+            return field
+        end
+
+        local connected_node = nodes_by_id[tostring(field.connect)]
+        if connected_node and connected_node.value_line and connected_node.value ~= nil then
+            field.line = connected_node.value_line
+            field.value = connected_node.value
+            field.connected_node_id = connected_node.id
+            field.connected_node_name = connected_node.name
+        end
+
+        return field
+    end
+
     local function add_file_light(owner, emission_node)
         local fields = emission_node and emission_node.fields or {}
-        local power_field = fields.power
+        local power_field = resolve_connected_field(fields.power)
         if not power_field or not power_field.line or power_field.value == nil then
             return
         end
-        owner = owner or emission_node or nearest_named_node()
-        if starts_with_wp(owner and owner.name) or starts_with_wp(emission_node and emission_node.name) then
-            return
+
+        local emission_is_named_control =
+            emission_node
+            and tostring(emission_node.type or "") == "54"
+            and tostring(emission_node.name or "") ~= ""
+            and tostring(emission_node.name or "") ~= "Texture emission"
+
+        if emission_is_named_control and (not owner or not is_light_node(owner)) then
+            owner = emission_node
         end
+
+        owner = owner or emission_node or nearest_named_node()
         if not is_real_light_owner(owner, emission_node) then
             return
         end
 
         local owner_id = tonumber(owner and owner.id) or tonumber(emission_node and emission_node.id) or -1
-        local power_node_id = tonumber(emission_node and emission_node.id) or -1
+        local power_node_id = tonumber(power_field.connected_node_id) or tonumber(emission_node and emission_node.id) or -1
         local key = tostring(owner_id) .. ":" .. tostring(power_field.line)
         if rows_by_key[key] then
             return
@@ -697,6 +720,13 @@ local function collect_file_lights()
             graph_name = owner and owner.graph_name or emission_node and emission_node.graph_name or nil,
             graph_path = owner and owner.graph_path or emission_node and emission_node.graph_path or nil,
             graph_position = owner and owner.position or emission_node and emission_node.position or nil,
+            goto_node_id = tonumber(emission_node and emission_node.id) or owner_id,
+            goto_node_name = emission_node and emission_node.name or display_name,
+            goto_node_type = tonumber(emission_node and emission_node.type) or tonumber(owner and owner.type) or -1,
+            goto_graph_id = emission_node and emission_node.graph_id or owner and owner.graph_id or nil,
+            goto_graph_name = emission_node and emission_node.graph_name or owner and owner.graph_name or nil,
+            goto_graph_path = emission_node and emission_node.graph_path or owner and owner.graph_path or nil,
+            goto_graph_position = emission_node and emission_node.position or owner and owner.position or nil,
             name = display_name,
             original_power = power_field.value,
             current_power = power_field.value,
@@ -877,6 +907,12 @@ local function collect_file_lights()
                     owner = pin_owner,
                     name = pin_name,
                 }
+
+                if tracked_pins[pin_name] then
+                    pin_owner.fields[pin_name] = {
+                        connect = key,
+                    }
+                end
             end
 
             local owner = pin_owner
@@ -927,6 +963,18 @@ local function collect_file_lights()
                 -- sibling option pins have been read.
             end
         end
+    end
+
+    for _, node in pairs(nodes_by_id) do
+        if node.fields then
+            for _, field in pairs(node.fields) do
+                resolve_connected_field(field)
+            end
+        end
+    end
+
+    for _, emission_node in pairs(emission_nodes_by_id) do
+        add_file_light(nil, emission_node)
     end
 
     for emission_id, owner in pairs(parent_by_emission_id) do
@@ -1030,11 +1078,34 @@ local function collect_file_lights()
                 row.goto_graph_path = emission_node.graph_path
                 row.goto_graph_position = emission_node.position
                 row.goto_target_source = target_source
+                row.fields = row.fields or {}
+                if emission_node.fields and emission_node.fields.lightPassId then
+                    row.fields.lightPassId = emission_node.fields.lightPassId
+                end
             end
         end
     end
 
+    local function row_light_id(row)
+        local field = row.fields and row.fields.lightPassId
+        if not field or field.value == nil then
+            return nil
+        end
+        return math.floor((tonumber(field.value) or 0) + 0.0000001)
+    end
+
     table.sort(rows, function(a, b)
+        local a_id = row_light_id(a)
+        local b_id = row_light_id(b)
+        if a_id and b_id and a_id ~= b_id then
+            return a_id < b_id
+        end
+        if a_id and not b_id then
+            return true
+        end
+        if b_id and not a_id then
+            return false
+        end
         if a.name == b.name then
             return a.node_id < b.node_id
         end
@@ -1060,14 +1131,22 @@ local function collect_file_lights()
     if daylight_count > 0 then
         print("  Includes " .. tostring(daylight_count) .. " daylight environment rows.")
     end
+    local function debug_row_light_id(row)
+        local field = row.fields and row.fields.lightPassId
+        if field and field.value ~= nil then
+            return tostring(math.floor((tonumber(field.value) or 0) + 0.0000001))
+        end
+        return "--"
+    end
     for _, row in ipairs(rows) do
         print(string.format(
-            "  %s [%d] -> file power node [%d], line %d, power %.3f%s",
+            "  %s [%d] -> file power node [%d], line %d, power %.3f, Light ID %s%s",
             tostring(row.name),
             tonumber(row.node_id) or -1,
             tonumber(row.power_node_id) or -1,
             tonumber(row.power_line) or -1,
             tonumber(row.current_power) or 0,
+            debug_row_light_id(row),
             row.goto_node_id and row.goto_node_id ~= row.node_id
                 and ("; Go targets emission [" .. tostring(row.goto_node_id) .. "] via " .. tostring(row.goto_target_source))
                 or ""
@@ -1083,7 +1162,7 @@ local function create_label(text, width)
         type   = octane.gui.componentType.LABEL,
         text   = text,
         width  = width or 120,
-        height = 22,
+        height = COMPACT_CONTROL_HEIGHT,
     }
 end
 
@@ -1093,7 +1172,7 @@ local function create_button(text, width, callback)
         type     = octane.gui.componentType.BUTTON,
         text     = text,
         width    = width or 58,
-        height   = 22,
+        height   = COMPACT_CONTROL_HEIGHT,
         callback = callback,
     }
 end
@@ -1111,7 +1190,7 @@ local function create_slider(value, max_value, callback)
         step     = SLIDER_STEP,
         value    = value,
         width    = 170,
-        height   = 22,
+        height   = COMPACT_CONTROL_HEIGHT,
         callback = callback,
     }
 end
@@ -1126,12 +1205,24 @@ local function short_name(name, max_len)
 end
 
 local function row_label_text(light)
-    local prefix = light == SELECTED_PANEL_LIGHT and "> " or "  "
-    return prefix .. short_name(light.name, 32) .. "  [" .. tostring(light.node_id) .. "]"
+    return short_name(light.name, 34) .. "  [" .. tostring(light.node_id) .. "]"
 end
 
-local function create_row_separator()
-    return create_label(string.rep("-", 146), 1320)
+local function create_scrollable_row_area(rows_group)
+    local panel_type = octane.gui.componentType.PANEL_STACK
+    if not panel_type then
+        return rows_group
+    end
+
+    return octane.gui.create
+    {
+        type     = panel_type,
+        width    = 1320,
+        height   = ROW_PANEL_HEIGHT,
+        children = { rows_group },
+        captions = { "Lights" },
+        open     = { true },
+    }
 end
 
 local function collect_lights()
@@ -1290,14 +1381,7 @@ local function update_component(component, props)
 end
 
 local function select_panel_row(light)
-    if SELECTED_PANEL_LIGHT and SELECTED_PANEL_LIGHT.row_label then
-        update_component(SELECTED_PANEL_LIGHT.row_label, { text = row_label_text(SELECTED_PANEL_LIGHT) })
-    end
-
-    SELECTED_PANEL_LIGHT = light
-    if light and light.row_label then
-        update_component(light.row_label, { text = row_label_text(light) })
-    end
+    -- No visual selection marker; Octane keeps stale label text in some builds.
 end
 
 local function get_component_value(component, event, fallback)
@@ -1321,6 +1405,70 @@ local function update_value_label(light)
     if light.value_label then
         update_component(light.value_label, { text = format_power(light.current_power) })
     end
+end
+
+local function format_light_id(light)
+    local field = light.fields and light.fields.lightPassId
+    if field and field.value ~= nil then
+        return tostring(math.floor((tonumber(field.value) or 0) + 0.0000001))
+    end
+
+    return "--"
+end
+
+local function update_light_id_label(light)
+    if light.light_id_label then
+        update_component(light.light_id_label, { text = format_light_id(light) })
+    end
+end
+
+local function set_light_pass_id(light, value)
+    if light.deleted then
+        print("Skipping deleted row: " .. tostring(light.name))
+        return false
+    end
+
+    local field = light.fields and light.fields.lightPassId
+    if not field or not field.line or not SCENE_LINES or not SCENE_LINES[field.line] then
+        print("No editable Light ID found for " .. tostring(light.name))
+        return false
+    end
+
+    value = math.max(0, math.min(LIGHT_PASS_ID_MAX, math.floor((tonumber(value) or 0) + 0.5)))
+    SCENE_LINES[field.line] = replace_attr_numeric_line(SCENE_LINES[field.line], value)
+    field.value = value
+    update_light_id_label(light)
+    return true
+end
+
+local function create_light_id_control(light)
+    local field = light.fields and light.fields.lightPassId
+    if not field then
+        return create_label(format_light_id(light), 86)
+    end
+
+    light.light_id_label = create_button(format_light_id(light), 38, function()
+        -- Centered value display; use -/+ to edit.
+    end)
+    local minus = create_button("-", 24, function()
+        select_panel_row(light)
+        set_light_pass_id(light, (tonumber(field.value) or 0) - 1)
+    end)
+    local plus = create_button("+", 24, function()
+        select_panel_row(light)
+        set_light_pass_id(light, (tonumber(field.value) or 0) + 1)
+    end)
+
+    return octane.gui.create
+    {
+        type     = octane.gui.componentType.GROUP,
+        text     = "",
+        rows     = 1,
+        cols     = 3,
+        children = { minus, light.light_id_label, plus },
+        padding  = { 0 },
+        border   = false,
+    }
 end
 
 local function set_light_power(light, value)
@@ -1472,6 +1620,137 @@ local function find_live_node_by_id(target_id)
     return nil, graph
 end
 
+local function graph_leaf_name(path)
+    local s = tostring(path or "")
+    if s == "" then
+        return ""
+    end
+
+    local last = s
+    for part in s:gmatch("[^/]+") do
+        last = part
+    end
+    return (last:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+local function live_graph_label(graph, fallback)
+    local parts = {}
+    if fallback and fallback ~= "" then
+        parts[#parts + 1] = fallback
+    end
+    if graph then
+        parts[#parts + 1] = tostring(graph)
+        local info = nil
+        if octane and octane.nodegraph and type(octane.nodegraph.getNodeGraphInfo) == "function" then
+            local ok, ret = pcall(octane.nodegraph.getNodeGraphInfo, graph)
+            if ok then
+                info = ret
+            end
+        end
+        if type(info) == "table" then
+            parts[#parts + 1] = tostring(info.name or "")
+            parts[#parts + 1] = tostring(info.id or "")
+        end
+    end
+    return table.concat(parts, " ")
+end
+
+local function graph_score_for_light(graph, live_path, light)
+    local target_path = tostring(light.goto_graph_path or light.graph_path or "")
+    if target_path == "" then
+        return 0
+    end
+
+    local target_leaf = graph_leaf_name(target_path)
+    local label = live_graph_label(graph, live_path):lower()
+    local target_low = target_path:lower()
+    local leaf_low = target_leaf:lower()
+
+    if label:find(target_low, 1, true) then
+        return 100
+    end
+
+    if leaf_low ~= "" and label:find(leaf_low, 1, true) then
+        return 50
+    end
+
+    if leaf_low == "scene" and not label:find("static", 1, true) then
+        return 20
+    end
+
+    return 0
+end
+
+local function collect_live_nodes_with_paths(graph)
+    local out = {}
+    local seen = {}
+
+    local function item_name(item)
+        if not item then
+            return ""
+        end
+        local info = nil
+        if octane and octane.nodegraph and type(octane.nodegraph.getNodeGraphInfo) == "function" then
+            local ok, ret = pcall(octane.nodegraph.getNodeGraphInfo, item)
+            if ok then
+                info = ret
+            end
+        end
+        if type(info) == "table" and info.name and tostring(info.name) ~= "" then
+            return tostring(info.name)
+        end
+        local s = tostring(item)
+        local name = s:match("name=([^,%}]+)")
+            or s:match("name%s*:%s*([^,%}]+)")
+            or s:match("%(([^%)]-)%)")
+        return tostring(name or "")
+    end
+
+    local function visit(item, path)
+        if not item then
+            return
+        end
+
+        local marker = tostring(item) .. "|" .. tostring(path)
+        if seen[marker] then
+            return
+        end
+        seen[marker] = true
+
+        local ok_count = call_method(item, "getPinCount")
+        if ok_count then
+            out[#out + 1] = {
+                node = item,
+                graph = nil,
+                path = path,
+            }
+        end
+
+        local ok_items, children = call_method(item, "getOwnedItems")
+        if ok_items and type(children) == "table" then
+            local child_path = path
+            if not ok_count then
+                local label = item_name(item)
+                if label ~= "" then
+                    child_path = path ~= "" and (path .. " / " .. label) or label
+                end
+            end
+            for _, child in ipairs(children) do
+                visit(child, child_path)
+            end
+        end
+    end
+
+    visit(graph, "")
+
+    for _, entry in ipairs(out) do
+        local owner_graph = node_owner_graph(entry.node)
+        entry.graph = owner_graph or graph
+    end
+
+    return out
+end
+
 local function live_node_matches_light(node, light)
     local info = node_info(node)
     local type_id = tonumber(info.type) or tonumber(info.typeId) or node_type(node)
@@ -1508,6 +1787,37 @@ local function live_node_matches_light(node, light)
     return false
 end
 
+local function find_live_node_for_file_light_by_graph(light)
+    local graph = get_root_graph()
+    if not graph then
+        return nil, nil, "no graph"
+    end
+
+    local entries = collect_live_nodes_with_paths(graph)
+    local best = nil
+    local best_score = -1
+    local matched = 0
+    local target_leaf = graph_leaf_name(light.goto_graph_path or light.graph_path):lower()
+    local prefer_later_duplicate = target_leaf ~= "" and target_leaf ~= "scene"
+
+    for _, entry in ipairs(entries) do
+        if live_node_matches_light(entry.node, light) then
+            matched = matched + 1
+            local score = graph_score_for_light(entry.graph, entry.path, light)
+            if score > best_score or (score == best_score and prefer_later_duplicate) then
+                best = entry
+                best_score = score
+            end
+        end
+    end
+
+    if best then
+        return best.node, best.graph or graph, "graph-aware name (" .. tostring(matched) .. " matches, score " .. tostring(best_score) .. ")"
+    end
+
+    return nil, graph, "graph-aware name not found"
+end
+
 local function find_live_node_for_light(light, allow_file_fuzzy)
     local target_id = light.goto_node_id or light.node_id
     local node, graph = find_live_node_by_id(target_id)
@@ -1522,6 +1832,14 @@ local function find_live_node_for_light(light, allow_file_fuzzy)
 
     if light.backend == "file" and not allow_file_fuzzy then
         return nil, graph, "file-backed id not exposed live"
+    end
+
+    if light.backend == "file" and allow_file_fuzzy then
+        local source
+        node, graph, source = find_live_node_for_file_light_by_graph(light)
+        if node then
+            return node, graph, source
+        end
     end
 
     local nodes = collect_all_nodes(graph)
@@ -1814,15 +2132,15 @@ local function locate_light(light)
             return
         end
     elseif light.backend == "file" then
-        if try_select_file_node_by_id(light) then
-            print("Octane accepted exact node-id selection, but this Lua API does not expose graph-view panning.")
-            return
-        end
-
         local fallback_source
         node, graph, fallback_source = find_live_node_for_light(light, true)
         print("  live fuzzy fallback: " .. tostring(fallback_source))
         if node and try_navigate_node(node, graph) then
+            return
+        end
+
+        if try_select_file_node_by_id(light) then
+            print("Octane accepted exact node-id selection, but this Lua API does not expose graph-view panning.")
             return
         end
     end
@@ -1869,19 +2187,21 @@ local function build_window(lights)
         type     = octane.gui.componentType.GROUP,
         text     = "",
         rows     = 1,
-        cols     = 4,
+        cols     = 5,
         children = {
             create_label("Light / emission node", 230),
             create_label("Set Power", 170),
             create_label("Current", 70),
+            create_label("Light ID", 86),
             create_label("Actions", 242),
         },
-        padding  = { 2 },
+        padding  = { 0 },
         border   = false,
     }
     children[#children + 1] = header
 
     local shown_count = math.min(#lights, MAX_LIGHTS_IN_WINDOW)
+    local row_children = {}
     for i = 1, shown_count do
         local light = lights[i]
         light.row_label = create_label(row_label_text(light), 230)
@@ -1919,7 +2239,7 @@ local function build_window(lights)
             rows     = 1,
             cols     = 4,
             children = { go_button, off_button, reset_button, delete_button },
-            padding  = { 1 },
+            padding  = { 0 },
             border   = false,
         }
 
@@ -1928,22 +2248,32 @@ local function build_window(lights)
             type     = octane.gui.componentType.GROUP,
             text     = "",
             rows     = 1,
-            cols     = 4,
+            cols     = 5,
             children = {
                 light.row_label,
                 light.slider,
                 light.value_label,
+                create_light_id_control(light),
                 action_group,
             },
-            padding  = { 2 },
+            padding  = { 0 },
             border   = false,
         }
 
-        children[#children + 1] = row
-        if i < shown_count then
-            children[#children + 1] = create_row_separator()
-        end
+        row_children[#row_children + 1] = row
     end
+
+    local rows_group = octane.gui.create
+    {
+        type     = octane.gui.componentType.GROUP,
+        text     = "",
+        rows     = #row_children,
+        cols     = 1,
+        children = row_children,
+        padding  = { 0 },
+        border   = false,
+    }
+    children[#children + 1] = create_scrollable_row_area(rows_group)
 
     if #lights > shown_count then
         children[#children + 1] = create_label(
@@ -2003,8 +2333,8 @@ local function build_window(lights)
             all_off_button,
             reset_all_button,
         },
-        padding  = { 4 },
-        inset    = { 5 },
+        padding  = { 2 },
+        inset    = { 3 },
     }
     children[#children + 1] = global_group
 
@@ -2015,7 +2345,7 @@ local function build_window(lights)
         rows     = #children,
         cols     = 1,
         children = children,
-        padding  = { 3 },
+        padding  = { 1 },
         border   = false,
     }
 
