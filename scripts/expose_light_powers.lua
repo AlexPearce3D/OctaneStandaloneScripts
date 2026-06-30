@@ -1,4 +1,4 @@
--- expose_nested_emissions.lua v0.4.07
+-- expose_light_powers.lua v0.4.07
 -- Expose nested Octane emission nodes to their parent graphs.
 --
 -- Run from Octane's Lua editor while a project is open, or pass an .ocs path
@@ -812,7 +812,7 @@ local function add_exposure_nodes(
     local linker_lines = {
         linker_indent .. "<node id=\"" .. tostring(linker_id) .. "\" type=\"" .. tostring(linker_type) .. "\" name=\"" .. xml_escape(exposed_name) .. "\" position=\"" .. string.format("%.1f %.1f", linker_x, linker_y) .. "\">",
         linker_indent .. " <attr name=\"group\" type=\"10\">Exposed Lights</attr>",
-        linker_indent .. " <attr name=\"description\" type=\"10\">" .. xml_escape(description or "Emission exposed by expose_nested_emissions.lua") .. "</attr>",
+        linker_indent .. " <attr name=\"description\" type=\"10\">" .. xml_escape(description or "Emission exposed by expose_light_powers.lua") .. "</attr>",
         linker_indent .. " <pin name=\"input\" connect=\"" .. tostring(float_id) .. "\" />",
         linker_indent .. "</node>",
     }
@@ -919,7 +919,7 @@ local function get_nested_float_linker(
     local linker_lines = {
         linker_indent .. "<node id=\"" .. tostring(linker_id) .. "\" type=\"" .. tostring(linker_type) .. "\" name=\"" .. xml_escape(exposed_name) .. "\" position=\"" .. string.format("%.1f %.1f", linker_x, linker_y) .. "\">",
         linker_indent .. " <attr name=\"group\" type=\"10\">Exposed Lights</attr>",
-        linker_indent .. " <attr name=\"description\" type=\"10\">" .. xml_escape(description or "Emission exposed by expose_nested_emissions.lua") .. "</attr>",
+        linker_indent .. " <attr name=\"description\" type=\"10\">" .. xml_escape(description or "Emission exposed by expose_light_powers.lua") .. "</attr>",
         linker_indent .. " <pin name=\"input\" connect=\"" .. tostring(float_id) .. "\" />",
         linker_indent .. "</node>",
     }
@@ -980,7 +980,7 @@ local function try_reload(path)
 end
 
 local function run()
-    print("=== expose_nested_emissions.lua " .. SCRIPT_VERSION .. " ===")
+    print("=== expose_light_powers.lua " .. SCRIPT_VERSION .. " ===")
 
     if octane and octane.project and type(octane.project.save) == "function" then
         local ok, err = pcall(octane.project.save)
@@ -1104,7 +1104,7 @@ local function run()
                         linker_type,
                         state,
                         "efficiency",
-                        "Emission efficiency multiplier exposed by expose_nested_emissions.lua"
+                        "Emission efficiency multiplier exposed by expose_light_powers.lua"
                     )
                     state.max_id = state.max_id + 1
                     local multiply_id = state.max_id
@@ -1204,7 +1204,7 @@ local function run()
                         linker_type,
                         state,
                         "power",
-                        "Emission power exposed by expose_nested_emissions.lua"
+                        "Emission power exposed by expose_light_powers.lua"
                     )
 
                     local power_pin = source.pins.power

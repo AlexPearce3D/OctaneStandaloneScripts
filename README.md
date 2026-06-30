@@ -4,7 +4,7 @@ Lua utilities for Octane Standalone workflows.
 
 ## Scripts
 
-### `scripts/expose_nested_emissions.lua`
+### `scripts/expose_light_powers.lua`
 
 Exposes nested Texture emission controls up to parent node graphs by adding Float value controls and Float input linkers.
 
@@ -28,7 +28,7 @@ Current version: `v0.1.14`
 Highlights:
 
 - Scans the current scene and falls back to a file-backed `.ocs` scan when Octane's live Lua graph only exposes anonymous internals.
-- Shows exposed Float controls created by `expose_nested_emissions.lua`.
+- Shows exposed Float controls created by `expose_light_powers.lua`.
 - Traces exposed power controls back to their original Texture emission nodes for the `Go` action when possible.
 - Includes daylight environment power controls.
 - Supports per-row power sliders, off/reset/delete buttons, `Go` selection, and global all-off/reset.
@@ -50,7 +50,7 @@ Light control panel:
 
 Open a script in Octane Standalone's Lua script editor while a project is open and run it.
 
-`expose_nested_emissions.lua` writes changes in place after creating a backup. To dry-run from command-line/script execution, pass:
+`expose_light_powers.lua` writes changes in place after creating a backup. To dry-run from command-line/script execution, pass:
 
 ```sh
 --dry-run
