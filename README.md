@@ -23,7 +23,7 @@ Highlights:
 
 Creates a floating light-control panel for Octane Standalone scenes.
 
-Current version: `v0.1.12`
+Current version: `v0.1.13`
 
 Highlights:
 
@@ -32,6 +32,7 @@ Highlights:
 - Traces exposed power controls back to their original Texture emission nodes for the `Go` action when possible.
 - Includes daylight environment power controls.
 - Supports per-row power sliders, off/reset/delete buttons, `Go` selection, and global all-off/reset.
+- Adds row borders and marks the last interacted row with a `>` prefix.
 - Supports marking a target node for deletion, then writing/reloading with `Apply+Render`.
 - Writes a `.lightpanel.bak` backup before modifying a scene.
 

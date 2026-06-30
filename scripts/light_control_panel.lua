@@ -4,7 +4,7 @@
 -- It scans the current scene graph for nodes with a "power" pin and creates
 -- a small floating window with per-light sliders plus global off/reset controls.
 
-local SCRIPT_VERSION = "v0.1.12"
+local SCRIPT_VERSION = "v0.1.13"
 local MAX_LIGHTS_IN_WINDOW = 120
 local POWER_SLIDER_MAX = 100000.0
 local SLIDER_STEP = 0.01
@@ -14,6 +14,7 @@ local SCENE_LINES = nil
 local SCENE_PATH = nil
 local SCENE_BACKED_UP = false
 local SCENE_NODE_SPANS = nil
+local SELECTED_PANEL_LIGHT = nil
 
 local function call_method(obj, name, ...)
     if not obj then
@@ -1124,6 +1125,11 @@ local function short_name(name, max_len)
     return name:sub(1, max_len - 3) .. "..."
 end
 
+local function row_label_text(light)
+    local prefix = light == SELECTED_PANEL_LIGHT and "> " or "  "
+    return prefix .. short_name(light.name, 32) .. "  [" .. tostring(light.node_id) .. "]"
+end
+
 local function collect_lights()
     local graph, graph_api = get_root_graph()
     if not graph then
@@ -1277,6 +1283,17 @@ local function update_component(component, props)
         return true
     end
     return false
+end
+
+local function select_panel_row(light)
+    if SELECTED_PANEL_LIGHT and SELECTED_PANEL_LIGHT.row_label then
+        update_component(SELECTED_PANEL_LIGHT.row_label, { text = row_label_text(SELECTED_PANEL_LIGHT) })
+    end
+
+    SELECTED_PANEL_LIGHT = light
+    if light and light.row_label then
+        update_component(light.row_label, { text = row_label_text(light) })
+    end
 end
 
 local function get_component_value(component, event, fallback)
@@ -1850,7 +1867,7 @@ local function build_window(lights)
         rows     = 1,
         cols     = 4,
         children = {
-            create_label("Light / emission node", 210),
+            create_label("Light / emission node", 230),
             create_label("Set Power", 170),
             create_label("Current", 70),
             create_label("Actions", 242),
@@ -1863,25 +1880,31 @@ local function build_window(lights)
     local shown_count = math.min(#lights, MAX_LIGHTS_IN_WINDOW)
     for i = 1, shown_count do
         local light = lights[i]
+        light.row_label = create_label(row_label_text(light), 230)
         light.value_label = create_label(format_power(light.current_power), 70)
 
         light.slider = create_slider(light.current_power, slider_max_for_power(light.current_power), function(comp, evt)
+            select_panel_row(light)
             apply_power(light, get_component_value(comp, evt, light.current_power))
         end)
 
         local off_button = create_button("Off", 58, function()
+            select_panel_row(light)
             set_light_off(light)
         end)
 
         local reset_button = create_button("Reset", 62, function()
+            select_panel_row(light)
             reset_light(light)
         end)
 
         local go_button = create_button("Go", 42, function()
+            select_panel_row(light)
             locate_light(light)
         end)
 
         local delete_button = create_button("Delete", 72, function()
+            select_panel_row(light)
             mark_file_node_deleted(light)
         end)
 
@@ -1903,13 +1926,13 @@ local function build_window(lights)
             rows     = 1,
             cols     = 4,
             children = {
-                create_label(short_name(light.name) .. "  [" .. tostring(light.node_id) .. "]", 210),
+                light.row_label,
                 light.slider,
                 light.value_label,
                 action_group,
             },
-            padding  = { 2 },
-            border   = false,
+            padding  = { 3 },
+            border   = true,
         }
 
         children[#children + 1] = row
