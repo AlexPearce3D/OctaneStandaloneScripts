@@ -19,14 +19,32 @@ Highlights:
 - Groups `wP...` parallax-plane emissions into a shared `wP Parallax Planes Power` control.
 - Writes a `.exposed-emissions.bak` backup before modifying a scene.
 
+### `scripts/light_control_panel.lua`
+
+Creates a floating light-control panel for Octane Standalone scenes.
+
+Current version: `v0.1.11`
+
+Highlights:
+
+- Scans the current scene and falls back to a file-backed `.ocs` scan when Octane's live Lua graph only exposes anonymous internals.
+- Shows exposed Float controls created by `expose_nested_emissions.lua`.
+- Traces exposed power controls back to their original Texture emission nodes for the `Go` action when possible.
+- Includes daylight environment power controls.
+- Supports per-row power sliders, off/reset buttons, light pass controls, diffuse/specular toggles, and global all-off/reset.
+- Supports marking a target node for deletion, then writing/reloading with `Apply+Render`.
+- Writes a `.lightpanel.bak` backup before modifying a scene.
+
 ## Usage
 
-Open the script in Octane Standalone's Lua script editor while a project is open and run it.
+Open a script in Octane Standalone's Lua script editor while a project is open and run it.
 
-By default the script writes changes in place after creating a backup. To dry-run from command-line/script execution, pass:
+`expose_nested_emissions.lua` writes changes in place after creating a backup. To dry-run from command-line/script execution, pass:
 
 ```sh
 --dry-run
 ```
 
-The first log line prints the script version so you can confirm which copy Octane ran.
+`light_control_panel.lua` edits file-backed scene values in memory first. Use `Apply+Render` in the panel to write the scene, reload it, and restart rendering.
+
+The first log line prints each script version so you can confirm which copy Octane ran.
