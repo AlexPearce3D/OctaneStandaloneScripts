@@ -23,7 +23,7 @@ Highlights:
 
 Creates a floating light-control panel for Octane Standalone scenes.
 
-Current version: `v0.1.11`
+Current version: `v0.1.12`
 
 Highlights:
 
@@ -31,7 +31,7 @@ Highlights:
 - Shows exposed Float controls created by `expose_nested_emissions.lua`.
 - Traces exposed power controls back to their original Texture emission nodes for the `Go` action when possible.
 - Includes daylight environment power controls.
-- Supports per-row power sliders, off/reset buttons, light pass controls, diffuse/specular toggles, and global all-off/reset.
+- Supports per-row power sliders, off/reset/delete buttons, `Go` selection, and global all-off/reset.
 - Supports marking a target node for deletion, then writing/reloading with `Apply+Render`.
 - Writes a `.lightpanel.bak` backup before modifying a scene.
 

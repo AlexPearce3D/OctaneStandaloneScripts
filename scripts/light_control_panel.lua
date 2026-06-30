@@ -4,10 +4,9 @@
 -- It scans the current scene graph for nodes with a "power" pin and creates
 -- a small floating window with per-light sliders plus global off/reset controls.
 
-local SCRIPT_VERSION = "v0.1.11"
+local SCRIPT_VERSION = "v0.1.12"
 local MAX_LIGHTS_IN_WINDOW = 120
 local POWER_SLIDER_MAX = 100000.0
-local LIGHT_PASS_ID_MAX = 100
 local SLIDER_STEP = 0.01
 local FILE_BACKUP_EXT = ".lightpanel.bak"
 
@@ -562,14 +561,8 @@ local function collect_file_lights()
     local rows = {}
     local tracked_pins = {
         power = true,
-        surfaceBrightness = true,
-        keepInstancePower = true,
-        lightPassId = true,
-        illumination = true,
         sunIntensity = true,
         turbidity = true,
-        visibleOnDiffuse = true,
-        visibleOnSpecular = true,
     }
 
     local function current_emission_owner()
@@ -665,10 +658,6 @@ local function collect_file_lights()
         if not power_field or not power_field.line or power_field.value == nil then
             return
         end
-        if not (fields.surfaceBrightness or fields.keepInstancePower or fields.lightPassId or fields.illumination or fields.visibleOnDiffuse or fields.visibleOnSpecular) then
-            return
-        end
-
         owner = owner or emission_node or nearest_named_node()
         if starts_with_wp(owner and owner.name) or starts_with_wp(emission_node and emission_node.name) then
             return
@@ -1282,14 +1271,6 @@ local function format_power(value)
     return string.format("%.3f", tonumber(value) or 0)
 end
 
-local function format_bool(value)
-    return (tonumber(value) or 0) == 1 and "On" or "Off"
-end
-
-local function format_int(value)
-    return tostring(math.floor((tonumber(value) or 0) + 0.0000001))
-end
-
 local function update_component(component, props)
     if component and type(component.updateProperties) == "function" then
         component:updateProperties(props)
@@ -1319,53 +1300,6 @@ local function update_value_label(light)
     if light.value_label then
         update_component(light.value_label, { text = format_power(light.current_power) })
     end
-end
-
-local function update_field_label(light, pin_name)
-    if not light.field_labels or not light.field_labels[pin_name] then
-        return
-    end
-
-    local field = light.fields and light.fields[pin_name]
-    local value = field and field.value
-    local text = "n/a"
-    if value ~= nil then
-        if pin_name == "lightPassId" then
-            text = format_int(value)
-        else
-            text = format_bool(value)
-        end
-    end
-    update_component(light.field_labels[pin_name], { text = text })
-end
-
-local function set_file_field(light, pin_name, value)
-    local field = light.fields and light.fields[pin_name]
-    if not field or not field.line or not SCENE_LINES or not SCENE_LINES[field.line] then
-        print("No editable " .. tostring(pin_name) .. " pin found for " .. tostring(light.name))
-        return false
-    end
-
-    if pin_name == "lightPassId" then
-        value = math.max(0, math.min(LIGHT_PASS_ID_MAX, math.floor((tonumber(value) or 0) + 0.5)))
-    else
-        value = (tonumber(value) or 0) ~= 0 and 1 or 0
-    end
-
-    SCENE_LINES[field.line] = replace_attr_numeric_line(SCENE_LINES[field.line], value)
-    field.value = value
-    update_field_label(light, pin_name)
-    return true
-end
-
-local function toggle_file_bool(light, pin_name)
-    local field = light.fields and light.fields[pin_name]
-    if not field then
-        print("No " .. tostring(pin_name) .. " pin found for " .. tostring(light.name))
-        return
-    end
-    local current = tonumber(field.value) or 0
-    set_file_field(light, pin_name, current == 0 and 1 or 0)
 end
 
 local function set_light_power(light, value)
@@ -1490,56 +1424,6 @@ end
 
 local function max_visible_power(lights, shown_count)
     return POWER_SLIDER_MAX
-end
-
-local function create_bool_button(light, pin_name, label)
-    local field = light.fields and light.fields[pin_name]
-    if not field then
-        return create_label("n/a", 46)
-    end
-
-    light.field_labels = light.field_labels or {}
-    light.field_labels[pin_name] = create_button(format_bool(field.value), 46, function()
-        toggle_file_bool(light, pin_name)
-    end)
-    return light.field_labels[pin_name]
-end
-
-local function create_bool_button_any(light, pin_names)
-    for _, pin_name in ipairs(pin_names) do
-        if light.fields and light.fields[pin_name] then
-            return create_bool_button(light, pin_name)
-        end
-    end
-    return create_label("n/a", 46)
-end
-
-local function create_light_pass_control(light)
-    local field = light.fields and light.fields.lightPassId
-    if not field then
-        return create_label("n/a", 96)
-    end
-
-    light.field_labels = light.field_labels or {}
-    light.field_labels.lightPassId = create_label(format_int(field.value), 28)
-
-    local minus = create_button("-", 28, function()
-        set_file_field(light, "lightPassId", (tonumber(field.value) or 0) - 1)
-    end)
-    local plus = create_button("+", 28, function()
-        set_file_field(light, "lightPassId", (tonumber(field.value) or 0) + 1)
-    end)
-
-    return octane.gui.create
-    {
-        type     = octane.gui.componentType.GROUP,
-        text     = "",
-        rows     = 1,
-        cols     = 3,
-        children = { minus, light.field_labels.lightPassId, plus },
-        padding  = { 1 },
-        border   = false,
-    }
 end
 
 local function find_live_node_by_id(target_id)
@@ -1964,16 +1848,11 @@ local function build_window(lights)
         type     = octane.gui.componentType.GROUP,
         text     = "",
         rows     = 1,
-        cols     = 9,
+        cols     = 4,
         children = {
             create_label("Light / emission node", 210),
             create_label("Set Power", 170),
             create_label("Current", 70),
-            create_label("Surf", 46),
-            create_label("Inst", 46),
-            create_label("Pass", 96),
-            create_label("Diff", 46),
-            create_label("Spec", 46),
             create_label("Actions", 242),
         },
         padding  = { 2 },
@@ -2022,16 +1901,11 @@ local function build_window(lights)
             type     = octane.gui.componentType.GROUP,
             text     = "",
             rows     = 1,
-            cols     = 9,
+            cols     = 4,
             children = {
                 create_label(short_name(light.name) .. "  [" .. tostring(light.node_id) .. "]", 210),
                 light.slider,
                 light.value_label,
-                create_bool_button(light, "surfaceBrightness", "Surf"),
-                create_bool_button(light, "keepInstancePower", "Inst"),
-                create_light_pass_control(light),
-                create_bool_button_any(light, { "visibleOnDiffuse", "illumination" }),
-                create_bool_button(light, "visibleOnSpecular", "Spec"),
                 action_group,
             },
             padding  = { 2 },
